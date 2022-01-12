@@ -12,14 +12,22 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
 import { ERC20PresetMinterPauserUpgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/presets/ERC20PresetMinterPauserUpgradeable.sol";
-
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { OptionToken } from "./OptionToken.sol";
 
 contract ERC20Option is Ownable, Pausable{
+    using SafeERC20 for IERC20;
+    using Strings for uint256;
 
     address public immutable collateralAsset;
 
     /// @dev Current epoch for ssov
     uint256 public currentEpoch;
+
+    uint256 public epochExpiry;
+
+    /// @dev Expire delay tolerance
+    uint256 public expireDelayTolerance = 5 minutes;
 
     /// @dev ERC20PresetMinterPauserUpgradeable implementation address
     address public immutable erc20Implementation;
@@ -67,6 +75,16 @@ contract ERC20Option is Ownable, Pausable{
     /// @dev mapping (epoch => deposits)
     mapping(uint256 => uint256) public totalEpochBalance;
 
+    /// @dev epoch => settlement price
+    mapping(uint256 => uint256) public settlementPrices;
+
+    /// @notice Epoch asset balance per strike after accounting for rewards
+    /// @dev mapping (epoch => (strike => balance))
+    mapping(uint256 => mapping(uint256 => uint256))
+    public totalEpochStrikeAssetBalance;
+
+    uint256 public WEEK = 7 days;
+
     /*==== EVENTS ====*/
 
     event NewDeposit(
@@ -79,19 +97,45 @@ contract ERC20Option is Ownable, Pausable{
 
     event NewStrike(
         uint256 epoch,
-        uint256[] strikes
+        uint256 strike
     );
 
     event epochStarted(
         uint256 epoch
     );
 
+    event SettleOption(
+        uint256 epoch,
+        uint256 strike,
+        address user,
+        uint256 amount,
+        uint256 pnl
+    );
+
+    event NewWithdraw(
+        uint256 epoch,
+        uint256 strike,
+        address user,
+        uint256 amount
+    );
+
+    /*==== CONSTRUCTOR ====*/
+
+    constructor(
+        address _collateralAsset
+    ) {
+        require(_collateralAsset != address(0), "E1");
+
+        collateralAsset = _collateralAsset;
+        erc20Implementation = address(new OptionToken());
+    }
+
 
     /**
      * @notice initiates the next epoch
-     * @return Whether bootstrap was successful
+     * @return Whether it was successful
      */
-    function nextEpoch() external onlyOwner whenNotPaused returns (bool) {
+    function startNextEpoch() external onlyOwner whenNotPaused returns (bool) {
         uint256 nextEpoch = currentEpoch + 1;
         require(!isVaultReady[nextEpoch], "E");
         require(epochStrikes[nextEpoch].length > 0, "E");
@@ -100,17 +144,18 @@ contract ERC20Option is Ownable, Pausable{
             // Previous epoch must be expired
             require(isEpochExpired[currentEpoch], "E");
         }
+        epochExpiry = block.timestamp + WEEK;
 
         for (uint256 i = 0; i < epochStrikes[nextEpoch].length; i++) {
             uint256 strike = epochStrikes[nextEpoch][i];
-            string memory name = concatenate("DPX-CALL", strike.toString());
+            string memory name = concatenate("ERC20-CALL", strike.toString());
             name = concatenate(name, "-EPOCH-");
             name = concatenate(name, (nextEpoch).toString());
             // Create doTokens representing calls for selected strike in epoch
-            ERC20PresetMinterPauserUpgradeable _erc20 = ERC20PresetMinterPauserUpgradeable(
+            OptionToken _erc20 = OptionToken(
                     Clones.clone(erc20Implementation)
                 );
-            _erc20.initialize(name, name);
+            _erc20.initialize(name, name, strike, epochExpiry);
             epochStrikeTokens[nextEpoch][strike] = address(_erc20);
         }
 
@@ -118,6 +163,7 @@ contract ERC20Option is Ownable, Pausable{
         isVaultReady[nextEpoch] = true;
         // Increase the current epoch
         currentEpoch = nextEpoch;
+        
 
         emit epochStarted(nextEpoch);
 
@@ -154,9 +200,9 @@ contract ERC20Option is Ownable, Pausable{
     }
 
         /**
-     * @notice Deposits dpx into the ssov to mint options in the next epoch for selected strikes
+     * @notice Deposits to mint options in the current epoch for selected strikes
      * @param strikeIndex Index of strike
-     * @param amount Amout of DPX to deposit
+     * @param amount Amout of collateral to deposit
      * @param user Address of the user to deposit for
      * @return Whether deposit was successful
      */
@@ -185,13 +231,16 @@ contract ERC20Option is Ownable, Pausable{
 
         bytes32 userStrike = keccak256(abi.encodePacked(user, strike));
 
-        abi.
-        // Transfer DPX from msg.sender (maybe different from user param) to ssov
+        // Transfer asset from msg.sender (maybe different from user param) to ssov
         IERC20(collateralAsset).safeTransferFrom(
             msg.sender,
             address(this),
             amount
         );
+
+        // Mint user option tokens
+        OptionToken(epochStrikeTokens[currentEpoch][strike])
+            .mint(msg.sender, amount);
 
         // Add to user epoch deposits
         userEpochDeposits[currentEpoch][userStrike] += amount;
@@ -207,6 +256,119 @@ contract ERC20Option is Ownable, Pausable{
         emit NewDeposit(currentEpoch, strike, amount, user, msg.sender);
 
         return true;
+    }
+
+    /**
+     * @notice Settle calculates the PnL for the user and withdraws the PnL in collateral asset to the user. Will also the burn the option tokens from the user.
+     * @param strikeIndex Strike index
+     * @param amount Amount of options
+     * @param epoch The epoch
+     * @return pnl
+     */
+    function settle(
+        uint256 strikeIndex,
+        uint256 amount,
+        uint256 epoch
+    ) external whenNotPaused returns (uint256 pnl) {
+        require(isEpochExpired[epoch], "E");
+        require(strikeIndex < epochStrikes[epoch].length, "E");
+        require(amount > 0, "E");
+
+        uint256 strike = epochStrikes[epoch][strikeIndex];
+        require(strike != 0, "E");
+        require(
+            IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >=
+                amount,
+            "E"
+        );
+
+        // Calculate PnL (in DPX)
+        pnl = calculatePnl(settlementPrices[epoch], strike, amount);
+
+        require(pnl > 0, "E");
+
+        IERC20 _erc20 = IERC20(collateralAsset);
+
+        // Burn user option tokens
+        OptionToken(epochStrikeTokens[epoch][strike])
+            .burnFrom(msg.sender, amount);
+
+        // Transfer PnL to user
+        _erc20.safeTransfer(msg.sender, pnl);
+
+        emit SettleOption(epoch, strike, msg.sender, amount, pnl);
+    }
+
+    /// @notice Calculate Pnl
+    /// @param price price of collateral asset
+    /// @param strike strike price of the the option
+    /// @param amount amount of options
+    function calculatePnl(
+        uint256 price,
+        uint256 strike,
+        uint256 amount
+    ) public pure returns (uint256) {
+        return price > strike ? (((price - strike) * amount) / price) : 0;
+    }
+
+    /// @notice Sets the current epoch as expired.
+    /// @return Whether expire was successful
+    function expireEpoch(uint256 settlementPrice)
+        external
+        onlyOwner
+        whenNotPaused
+        returns (bool)
+    {
+        require(!isEpochExpired[currentEpoch], "E");
+        require((block.timestamp > epochExpiry + expireDelayTolerance), "E");
+
+        settlementPrices[currentEpoch] = settlementPrice;
+
+        isEpochExpired[currentEpoch] = true;
+
+        return true;
+    }
+
+        /**
+     * @notice Withdraws balances for a strike in a completed epoch
+     * @param withdrawEpoch Epoch to withdraw from
+     * @param strikeIndex Index of strike
+     * @return withdrawn amount
+     */
+    function withdrawCollateral(uint256 withdrawEpoch, uint256 strikeIndex)
+        external
+        whenNotPaused
+        returns (uint256)
+    {
+        require(isEpochExpired[withdrawEpoch], "E");
+        require(strikeIndex < epochStrikes[withdrawEpoch].length, "E");
+
+        uint256 strike = epochStrikes[withdrawEpoch][strikeIndex];
+        require(strike != 0, "E");
+
+        bytes32 userStrike = keccak256(abi.encodePacked(msg.sender, strike));
+        uint256 userStrikeDeposits = userEpochDeposits[withdrawEpoch][
+            userStrike
+        ];
+        require(userStrikeDeposits > 0, "E");
+
+
+        // Transfer tokens to user
+        uint256 pnl = calculatePnl(settlementPrices[withdrawEpoch], strike, userStrikeDeposits);
+        uint256 userCollateralAmount = userStrikeDeposits - pnl;
+
+        userEpochDeposits[withdrawEpoch][userStrike] = 0;
+
+        IERC20(collateralAsset).safeTransfer(msg.sender, userCollateralAmount);
+
+        emit NewWithdraw(
+            withdrawEpoch,
+            strike,
+            msg.sender,
+            userStrikeDeposits
+        );
+
+        return userCollateralAmount;
     }
 
     /**

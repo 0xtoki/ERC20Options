@@ -24,8 +24,14 @@ import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgr
  * and pauser roles to other accounts.
  */
 contract OptionToken is Initializable, ContextUpgradeable, AccessControlEnumerableUpgradeable, ERC20BurnableUpgradeable, ERC20PausableUpgradeable {
-    function initialize(string memory name, string memory symbol) public virtual initializer {
+    uint256 public strikePrice;
+    uint256 public expiry;
+
+
+    function initialize(string memory name, string memory symbol, uint256 _strikePrice, uint256 _expiry) public virtual initializer {
         __ERC20PresetMinterPauser_init(name, symbol);
+        strikePrice = _strikePrice;
+        expiry = _expiry;
     }
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
