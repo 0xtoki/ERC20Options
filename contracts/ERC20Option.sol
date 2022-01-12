@@ -1,21 +1,22 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-// libraries
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import "hardhat/console.sol";
 
-// interfaces 
+// libraries
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+
+// interfaces VaultToken
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // contracts
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
-import { ERC20PresetMinterPauserUpgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/presets/ERC20PresetMinterPauserUpgradeable.sol";
+import { VaultToken } from "./VaultToken.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { OptionToken } from "./OptionToken.sol";
 
-contract ERC20Option is Ownable, Pausable{
+contract ERC20Option is Ownable, Pausable {
     using SafeERC20 for IERC20;
     using Strings for uint256;
 
@@ -59,8 +60,7 @@ contract ERC20Option is Ownable, Pausable{
 
     /// @notice Total epoch deposits for specific strikes
     /// @dev mapping (epoch => (strike => deposits))
-    mapping(uint256 => mapping(uint256 => uint256))
-    public totalEpochStrikeDeposits;
+    mapping(uint256 => mapping(uint256 => uint256)) public totalEpochStrikeDeposits;
 
     /// @notice Total epoch deposits across all strikes
     /// @dev mapping (epoch => deposits)
@@ -68,8 +68,7 @@ contract ERC20Option is Ownable, Pausable{
 
     /// @notice Total epoch deposits for specific strikes including premiums and rewards
     /// @dev mapping (epoch => (strike => deposits))
-    mapping(uint256 => mapping(uint256 => uint256))
-    public totalEpochStrikeBalance;
+    mapping(uint256 => mapping(uint256 => uint256)) public totalEpochStrikeBalance;
 
     /// @notice Total epoch deposits across all strikes including premiums and rewards
     /// @dev mapping (epoch => deposits)
@@ -80,56 +79,32 @@ contract ERC20Option is Ownable, Pausable{
 
     /// @notice Epoch asset balance per strike after accounting for rewards
     /// @dev mapping (epoch => (strike => balance))
-    mapping(uint256 => mapping(uint256 => uint256))
-    public totalEpochStrikeAssetBalance;
+    mapping(uint256 => mapping(uint256 => uint256)) public totalEpochStrikeAssetBalance;
 
     uint256 public WEEK = 7 days;
 
     /*==== EVENTS ====*/
 
-    event NewDeposit(
-        uint256 epoch,
-        uint256 strike,
-        uint256 amount,
-        address user,
-        address sender
-    );
+    event NewDeposit(uint256 epoch, uint256 strike, uint256 amount, address user, address sender);
 
-    event NewStrike(
-        uint256 epoch,
-        uint256 strike
-    );
+    event NewStrike(uint256 epoch, uint256 strike);
 
-    event epochStarted(
-        uint256 epoch
-    );
+    event epochStarted(uint256 epoch);
 
-    event SettleOption(
-        uint256 epoch,
-        uint256 strike,
-        address user,
-        uint256 amount,
-        uint256 pnl
-    );
+    event SettleOption(uint256 epoch, uint256 strike, address user, uint256 amount, uint256 pnl);
 
-    event NewWithdraw(
-        uint256 epoch,
-        uint256 strike,
-        address user,
-        uint256 amount
-    );
+    event NewWithdraw(uint256 epoch, uint256 strike, address user, uint256 amount);
 
     /*==== CONSTRUCTOR ====*/
 
-    constructor(
-        address _collateralAsset
-    ) {
+    constructor(address _collateralAsset) {
         require(_collateralAsset != address(0), "E1");
 
         collateralAsset = _collateralAsset;
-        erc20Implementation = address(new OptionToken());
-    }
 
+        currentEpoch = 0;
+        erc20Implementation = address(new VaultToken());
+    }
 
     /**
      * @notice initiates the next epoch
@@ -152,9 +127,7 @@ contract ERC20Option is Ownable, Pausable{
             name = concatenate(name, "-EPOCH-");
             name = concatenate(name, (nextEpoch).toString());
             // Create doTokens representing calls for selected strike in epoch
-            OptionToken _erc20 = OptionToken(
-                    Clones.clone(erc20Implementation)
-                );
+            VaultToken _erc20 = VaultToken(Clones.clone(erc20Implementation));
             _erc20.initialize(name, name, strike, epochExpiry);
             epochStrikeTokens[nextEpoch][strike] = address(_erc20);
         }
@@ -163,7 +136,7 @@ contract ERC20Option is Ownable, Pausable{
         isVaultReady[nextEpoch] = true;
         // Increase the current epoch
         currentEpoch = nextEpoch;
-        
+        isEpochActive[currentEpoch] = true;
 
         emit epochStarted(nextEpoch);
 
@@ -175,12 +148,7 @@ contract ERC20Option is Ownable, Pausable{
      * @param strikes Strikes to set for next epoch
      * @return Whether strikes were set
      */
-    function setStrikes(uint256[] memory strikes)
-        external
-        onlyOwner
-        whenNotPaused
-        returns (bool)
-    {
+    function setStrikes(uint256[] memory strikes) external onlyOwner whenNotPaused returns (bool) {
         uint256 nextEpoch = currentEpoch + 1;
 
         if (currentEpoch > 0) {
@@ -194,12 +162,11 @@ contract ERC20Option is Ownable, Pausable{
         // Set the next epoch start time
         epochStartTimes[nextEpoch] = block.timestamp;
 
-        for (uint256 i = 0; i < strikes.length; i++)
-            emit NewStrike(nextEpoch, strikes[i]);
+        for (uint256 i = 0; i < strikes.length; i++) emit NewStrike(nextEpoch, strikes[i]);
         return true;
     }
 
-        /**
+    /**
      * @notice Deposits to mint options in the current epoch for selected strikes
      * @param strikeIndex Index of strike
      * @param amount Amout of collateral to deposit
@@ -211,36 +178,27 @@ contract ERC20Option is Ownable, Pausable{
         uint256 amount,
         address user
     ) public whenNotPaused returns (bool) {
-
         if (currentEpoch > 0) {
-            require(
-                isEpochActive[currentEpoch],
-                "E"
-            );
+            require(isEpochActive[currentEpoch], "E");
         }
 
         // Must be a valid strikeIndex
-        require(strikeIndex < epochStrikes[currentEpoch].length, "E");
+        require(strikeIndex < epochStrikes[currentEpoch].length, "E1");
 
         // Must +ve amount
-        require(amount > 0, "E");
+        require(amount > 0, "E2");
 
         // Must be a valid strike
         uint256 strike = epochStrikes[currentEpoch][strikeIndex];
-        require(strike != 0, "E");
+        require(strike != 0, "E3");
 
         bytes32 userStrike = keccak256(abi.encodePacked(user, strike));
 
         // Transfer asset from msg.sender (maybe different from user param) to ssov
-        IERC20(collateralAsset).safeTransferFrom(
-            msg.sender,
-            address(this),
-            amount
-        );
+        IERC20(collateralAsset).safeTransferFrom(msg.sender, address(this), amount);
 
         // Mint user option tokens
-        OptionToken(epochStrikeTokens[currentEpoch][strike])
-            .mint(msg.sender, amount);
+        VaultToken(epochStrikeTokens[currentEpoch][strike]).mint(msg.sender, amount);
 
         // Add to user epoch deposits
         userEpochDeposits[currentEpoch][userStrike] += amount;
@@ -276,11 +234,7 @@ contract ERC20Option is Ownable, Pausable{
 
         uint256 strike = epochStrikes[epoch][strikeIndex];
         require(strike != 0, "E");
-        require(
-            IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >=
-                amount,
-            "E"
-        );
+        require(IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >= amount, "E");
 
         // Calculate PnL (in DPX)
         pnl = calculatePnl(settlementPrices[epoch], strike, amount);
@@ -290,8 +244,7 @@ contract ERC20Option is Ownable, Pausable{
         IERC20 _erc20 = IERC20(collateralAsset);
 
         // Burn user option tokens
-        OptionToken(epochStrikeTokens[epoch][strike])
-            .burnFrom(msg.sender, amount);
+        VaultToken(epochStrikeTokens[epoch][strike]).burnFrom(msg.sender, amount);
 
         // Transfer PnL to user
         _erc20.safeTransfer(msg.sender, pnl);
@@ -313,12 +266,7 @@ contract ERC20Option is Ownable, Pausable{
 
     /// @notice Sets the current epoch as expired.
     /// @return Whether expire was successful
-    function expireEpoch(uint256 settlementPrice)
-        external
-        onlyOwner
-        whenNotPaused
-        returns (bool)
-    {
+    function expireEpoch(uint256 settlementPrice) external onlyOwner whenNotPaused returns (bool) {
         require(!isEpochExpired[currentEpoch], "E");
         require((block.timestamp > epochExpiry + expireDelayTolerance), "E");
 
@@ -329,17 +277,13 @@ contract ERC20Option is Ownable, Pausable{
         return true;
     }
 
-        /**
+    /**
      * @notice Withdraws balances for a strike in a completed epoch
      * @param withdrawEpoch Epoch to withdraw from
      * @param strikeIndex Index of strike
      * @return withdrawn amount
      */
-    function withdrawCollateral(uint256 withdrawEpoch, uint256 strikeIndex)
-        external
-        whenNotPaused
-        returns (uint256)
-    {
+    function withdrawCollateral(uint256 withdrawEpoch, uint256 strikeIndex) external whenNotPaused returns (uint256) {
         require(isEpochExpired[withdrawEpoch], "E");
         require(strikeIndex < epochStrikes[withdrawEpoch].length, "E");
 
@@ -347,11 +291,8 @@ contract ERC20Option is Ownable, Pausable{
         require(strike != 0, "E");
 
         bytes32 userStrike = keccak256(abi.encodePacked(msg.sender, strike));
-        uint256 userStrikeDeposits = userEpochDeposits[withdrawEpoch][
-            userStrike
-        ];
+        uint256 userStrikeDeposits = userEpochDeposits[withdrawEpoch][userStrike];
         require(userStrikeDeposits > 0, "E");
-
 
         // Transfer tokens to user
         uint256 pnl = calculatePnl(settlementPrices[withdrawEpoch], strike, userStrikeDeposits);
@@ -361,12 +302,7 @@ contract ERC20Option is Ownable, Pausable{
 
         IERC20(collateralAsset).safeTransfer(msg.sender, userCollateralAmount);
 
-        emit NewWithdraw(
-            withdrawEpoch,
-            strike,
-            msg.sender,
-            userStrikeDeposits
-        );
+        emit NewWithdraw(withdrawEpoch, strike, msg.sender, userStrikeDeposits);
 
         return userCollateralAmount;
     }
@@ -376,11 +312,7 @@ contract ERC20Option is Ownable, Pausable{
      * @param a string a
      * @param b string b
      */
-    function concatenate(string memory a, string memory b)
-        internal
-        pure
-        returns (string memory)
-    {
+    function concatenate(string memory a, string memory b) internal pure returns (string memory) {
         return string(abi.encodePacked(a, b));
     }
 }

@@ -1,13 +1,14 @@
-//SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+// OpenZeppelin Contracts v4.4.1 (token/ERC20/presets/ERC20PresetMinterPauser.sol)
 
-// Contracts
-import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
-import {ERC20BurnableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+pragma solidity ^0.8.0;
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @dev {ERC20} token, including:
@@ -23,16 +24,27 @@ import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgr
  * roles, as well as the default admin role, which will let it grant both minter
  * and pauser roles to other accounts.
  */
-contract OptionToken is Initializable, ContextUpgradeable, AccessControlEnumerableUpgradeable, ERC20BurnableUpgradeable, ERC20PausableUpgradeable {
+contract VaultToken is
+    Initializable,
+    ContextUpgradeable,
+    AccessControlEnumerableUpgradeable,
+    ERC20BurnableUpgradeable,
+    ERC20PausableUpgradeable
+{
     uint256 public strikePrice;
     uint256 public expiry;
 
-
-    function initialize(string memory name, string memory symbol, uint256 _strikePrice, uint256 _expiry) public virtual initializer {
+    function initialize(
+        string memory name,
+        string memory symbol,
+        uint256 _strikePrice,
+        uint256 _expiry
+    ) public virtual initializer {
         __ERC20PresetMinterPauser_init(name, symbol);
         strikePrice = _strikePrice;
         expiry = _expiry;
     }
+
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -42,7 +54,7 @@ contract OptionToken is Initializable, ContextUpgradeable, AccessControlEnumerab
      *
      * See {ERC20-constructor}.
      */
-    function __ERC20PresetMinterPauser_init(string memory name, string memory symbol) internal initializer {
+    function __ERC20PresetMinterPauser_init(string memory name, string memory symbol) internal onlyInitializing {
         __Context_init_unchained();
         __ERC165_init_unchained();
         __AccessControl_init_unchained();
@@ -54,7 +66,7 @@ contract OptionToken is Initializable, ContextUpgradeable, AccessControlEnumerab
         __ERC20PresetMinterPauser_init_unchained(name, symbol);
     }
 
-    function __ERC20PresetMinterPauser_init_unchained(string memory name, string memory symbol) internal initializer {
+    function __ERC20PresetMinterPauser_init_unchained(string memory name, string memory symbol) internal onlyInitializing {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
 
         _setupRole(MINTER_ROLE, _msgSender());
@@ -110,5 +122,6 @@ contract OptionToken is Initializable, ContextUpgradeable, AccessControlEnumerab
     ) internal virtual override(ERC20Upgradeable, ERC20PausableUpgradeable) {
         super._beforeTokenTransfer(from, to, amount);
     }
+
     uint256[50] private __gap;
 }

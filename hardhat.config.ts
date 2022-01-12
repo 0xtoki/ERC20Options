@@ -8,7 +8,7 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "hardhat-deploy";
 import "hardhat-deploy-ethers";
-import '@openzeppelin/hardhat-upgrades';
+import "@openzeppelin/hardhat-upgrades";
 
 dotenv.config();
 
@@ -52,9 +52,7 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
     hardhat: {
-      forking: {
-        url: process.env.ALCHEMY_URL || "",
-      },
+      //blockGasLimit: 3000000000000000
     },
   },
   gasReporter: {
