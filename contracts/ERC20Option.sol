@@ -48,6 +48,10 @@ contract ERC20Option is Ownable, Pausable {
     /// @dev epoch => whether the epoch is expired
     mapping(uint256 => bool) public isEpochExpired;
 
+    /// @notice Is settlement open for the current epoch
+    /// @dev epoch => whether settlement is open
+    mapping(uint256 => bool) public isSettlementOpen;
+
     /// @dev Mapping of (epoch => (strike => tokens))
     mapping(uint256 => mapping(uint256 => address)) public epochStrikeTokens;
 
@@ -83,6 +87,8 @@ contract ERC20Option is Ownable, Pausable {
 
     uint256 public WEEK = 7 days;
 
+    uint256 public HOUR = 1 hours;
+
     /*==== EVENTS ====*/
 
     event NewDeposit(uint256 epoch, uint256 strike, uint256 amount, address user, address sender);
@@ -104,6 +110,22 @@ contract ERC20Option is Ownable, Pausable {
 
         currentEpoch = 0;
         erc20Implementation = address(new VaultToken());
+    }
+
+    /// @notice Pauses the vault for emergency cases
+    /// @dev Can only be called by owner
+    /// @return Whether it was successfully paused
+    function pause() external onlyOwner returns (bool) {
+        _pause();
+        return true;
+    }
+
+    /// @notice Unpauses the vault
+    /// @dev Can only be called by owner
+    /// @return Whether it was successfully unpaused
+    function unpause() external onlyOwner returns (bool) {
+        _unpause();
+        return true;
     }
 
     /**
@@ -183,14 +205,14 @@ contract ERC20Option is Ownable, Pausable {
         }
 
         // Must be a valid strikeIndex
-        require(strikeIndex < epochStrikes[currentEpoch].length, "E1");
+        require(strikeIndex < epochStrikes[currentEpoch].length, "E");
 
         // Must +ve amount
-        require(amount > 0, "E2");
+        require(amount > 0, "E");
 
         // Must be a valid strike
         uint256 strike = epochStrikes[currentEpoch][strikeIndex];
-        require(strike != 0, "E3");
+        require(strike != 0, "E");
 
         bytes32 userStrike = keccak256(abi.encodePacked(user, strike));
 
@@ -228,13 +250,14 @@ contract ERC20Option is Ownable, Pausable {
         uint256 amount,
         uint256 epoch
     ) external whenNotPaused returns (uint256 pnl) {
-        require(isEpochExpired[epoch], "E");
-        require(strikeIndex < epochStrikes[epoch].length, "E");
-        require(amount > 0, "E");
+        require(isSettlementOpen[epoch], "E1");
+        require(!isEpochExpired[epoch], "E2");
+        require(strikeIndex < epochStrikes[epoch].length, "E3");
+        require(amount > 0, "E4");
 
         uint256 strike = epochStrikes[epoch][strikeIndex];
         require(strike != 0, "E");
-        require(IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >= amount, "E");
+        require(IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >= amount, "E5");
 
         // Calculate PnL (in DPX)
         pnl = calculatePnl(settlementPrices[epoch], strike, amount);
@@ -266,13 +289,26 @@ contract ERC20Option is Ownable, Pausable {
 
     /// @notice Sets the current epoch as expired.
     /// @return Whether expire was successful
-    function expireEpoch(uint256 settlementPrice) external onlyOwner whenNotPaused returns (bool) {
+    function expireEpoch() public whenNotPaused returns (bool) {
         require(!isEpochExpired[currentEpoch], "E");
-        require((block.timestamp > epochExpiry + expireDelayTolerance), "E");
+        require((block.timestamp > epochExpiry), "E");
+
+        isEpochExpired[currentEpoch] = true;
+        isSettlementOpen[currentEpoch] = false;
+
+        return true;
+    }
+
+    /// @notice Sets the current epoch as expired.
+    /// @return Whether opening settlement was successful
+    function openSettlement(uint256 settlementPrice) external onlyOwner whenNotPaused returns (bool) {
+        require(!isSettlementOpen[currentEpoch], "E");
+        require((block.timestamp > (epochExpiry - HOUR)), "E");
+        require((block.timestamp < epochExpiry), "E");
 
         settlementPrices[currentEpoch] = settlementPrice;
 
-        isEpochExpired[currentEpoch] = true;
+        isSettlementOpen[currentEpoch] = true;
 
         return true;
     }
