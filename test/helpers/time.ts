@@ -7,8 +7,7 @@ export async function increase(duration: number | BigNumber) {
     duration = BigNumber.from(duration);
   }
 
-  if (duration.lt(BigNumber.from("0")))
-    throw Error(`Cannot increase time by a negative amount (${duration})`);
+  if (duration.lt(BigNumber.from("0"))) throw Error(`Cannot increase time by a negative amount (${duration})`);
 
   await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
 
@@ -32,14 +31,9 @@ export async function increaseTo(target: number | BigNumber) {
     target = BigNumber.from(target);
   }
 
-  const now = BigNumber.from(
-    (await ethers.provider.getBlock("latest")).timestamp
-  );
+  const now = BigNumber.from((await ethers.provider.getBlock("latest")).timestamp);
 
-  if (target.lt(now))
-    throw Error(
-      `Cannot increase current time (${now}) to a moment in the past (${target})`
-    );
+  if (target.lt(now)) throw Error(`Cannot increase current time (${now}) to a moment in the past (${target})`);
 
   const diff = target.sub(now);
   return increase(diff);
