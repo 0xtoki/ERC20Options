@@ -51,8 +51,9 @@ const config: HardhatUserConfig = {
       url: process.env.RINKEBY_URL || "",
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
-    hardhat: {
-      //blockGasLimit: 3000000000000000
+    ganache: {
+      url: `HTTP://127.0.0.1:7545`,
+      accounts: process.env.GANACHE_KEY !== undefined ? [process.env.GANACHE_KEY] : [],
     },
   },
   gasReporter: {

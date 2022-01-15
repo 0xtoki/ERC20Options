@@ -15,6 +15,28 @@ describe("unit:ERC20Option", function () {
   const ONE = ethers.utils.parseUnits("1", 18);
   const TWO = ethers.utils.parseUnits("2", 18);
   const timeInterval = BigNumber.from("100");
+
+  async function setupMint() {
+    Signers = await ethers.getSigners();
+    provider = await ethers.getDefaultProvider();
+    const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
+    ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
+    await ERC20Collateral.deployed();
+    await ERC20Collateral.mint(Signers[0].address, ONE);
+    await ERC20Collateral.mint(Signers[1].address, ONE);
+
+    const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
+    ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
+    await ERC20Option.deployed();
+    // set the strikes
+    await ERC20Option.setStrikes([10, 20, 30]);
+    // start the epoch
+    await ERC20Option.startNextEpoch();
+    // approve sening collateral
+    await ERC20Collateral.connect(Signers[1]).approve(ERC20Option.address, ONE);
+    // mint options
+    await ERC20Option.connect(Signers[1]).mintOption(1, ONE, Signers[1].address);
+  }
   describe("#mintOption", function () {
     this.beforeEach("deploy", async () => {
       Signers = await ethers.getSigners();
@@ -69,25 +91,7 @@ describe("unit:ERC20Option", function () {
 
   describe("#settle", function () {
     this.beforeEach("deploy", async () => {
-      Signers = await ethers.getSigners();
-      provider = await ethers.getDefaultProvider();
-      const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
-      ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
-      await ERC20Collateral.deployed();
-      await ERC20Collateral.mint(Signers[0].address, ONE);
-      await ERC20Collateral.mint(Signers[1].address, ONE);
-
-      const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
-      ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
-      await ERC20Option.deployed();
-      // set the strikes
-      await ERC20Option.setStrikes([10, 20, 30]);
-      // start the epoch
-      await ERC20Option.startNextEpoch();
-      // approve sening collateral
-      await ERC20Collateral.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      // mint options
-      await ERC20Option.connect(Signers[1]).mintOption(1, ONE, Signers[1].address);
+      await setupMint();
     });
     it("should allow users to exercise options in the exercise window", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -162,25 +166,7 @@ describe("unit:ERC20Option", function () {
 
   describe("#withdrawCollateral", function () {
     this.beforeEach("deploy", async () => {
-      Signers = await ethers.getSigners();
-      provider = await ethers.getDefaultProvider();
-      const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
-      ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
-      await ERC20Collateral.deployed();
-      await ERC20Collateral.mint(Signers[0].address, ONE);
-      await ERC20Collateral.mint(Signers[1].address, ONE);
-
-      const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
-      ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
-      await ERC20Option.deployed();
-      // set the strikes
-      await ERC20Option.setStrikes([10, 20, 30]);
-      // start the epoch
-      await ERC20Option.startNextEpoch();
-      // approve sening collateral
-      await ERC20Collateral.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      // mint options
-      await ERC20Option.connect(Signers[1]).mintOption(1, ONE, Signers[1].address);
+      await setupMint();
     });
     it("should not allow depositors to claim before the epoch has ended", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -237,25 +223,7 @@ describe("unit:ERC20Option", function () {
 
   describe("#openSettlement", function () {
     this.beforeEach("deploy", async () => {
-      Signers = await ethers.getSigners();
-      provider = await ethers.getDefaultProvider();
-      const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
-      ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
-      await ERC20Collateral.deployed();
-      await ERC20Collateral.mint(Signers[0].address, ONE);
-      await ERC20Collateral.mint(Signers[1].address, ONE);
-
-      const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
-      ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
-      await ERC20Option.deployed();
-      // set the strikes
-      await ERC20Option.setStrikes([10, 20, 30]);
-      // start the epoch
-      await ERC20Option.startNextEpoch();
-      // approve sening collateral
-      await ERC20Collateral.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      // mint options
-      await ERC20Option.connect(Signers[1]).mintOption(1, ONE, Signers[1].address);
+      await setupMint();
     });
     it("should revert if settlement already open", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -277,25 +245,7 @@ describe("unit:ERC20Option", function () {
   });
   describe("#expireEpoch", function () {
     this.beforeEach("deploy", async () => {
-      Signers = await ethers.getSigners();
-      provider = await ethers.getDefaultProvider();
-      const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
-      ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
-      await ERC20Collateral.deployed();
-      await ERC20Collateral.mint(Signers[0].address, ONE);
-      await ERC20Collateral.mint(Signers[1].address, ONE);
-
-      const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
-      ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
-      await ERC20Option.deployed();
-      // set the strikes
-      await ERC20Option.setStrikes([10, 20, 30]);
-      // start the epoch
-      await ERC20Option.startNextEpoch();
-      // approve sening collateral
-      await ERC20Collateral.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      // mint options
-      await ERC20Option.connect(Signers[1]).mintOption(1, ONE, Signers[1].address);
+      await setupMint();
     });
     it("should revert if epoch is expired", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -317,6 +267,39 @@ describe("unit:ERC20Option", function () {
       const settlementOpen = await ERC20Option.isSettlementOpen(1);
       expect(epochExpired).to.equal(true);
       expect(settlementOpen).to.equal(false);
+    });
+  });
+
+  describe("#startNextEpoch", function () {
+    this.beforeEach("deploy", async () => {
+      Signers = await ethers.getSigners();
+      provider = await ethers.getDefaultProvider();
+      const ERC20CollateralFactory = await ethers.getContractFactory("ERC20Mock");
+      ERC20Collateral = await ERC20CollateralFactory.deploy("test", "TST");
+      await ERC20Collateral.deployed();
+      await ERC20Collateral.mint(Signers[0].address, ONE);
+      await ERC20Collateral.mint(Signers[1].address, ONE);
+
+      const ERC20OptionFactory = await ethers.getContractFactory("ERC20Option");
+      ERC20Option = await ERC20OptionFactory.deploy(ERC20Collateral.address);
+      await ERC20Option.deployed();
+    });
+    it("should revert if next epoch strikes not set", async function () {
+      await expect(ERC20Option.startNextEpoch()).to.be.revertedWith("E");
+    });
+    it("should create option erc20 tokens", async function () {
+      await ERC20Option.setStrikes([10, 20]);
+      await ERC20Option.startNextEpoch();
+      const tokenAddressFirst = await ERC20Option.epochStrikeTokens(1, 10);
+      const tokenAddressSecond = await ERC20Option.epochStrikeTokens(1, 20);
+
+      const optionTokenContractFirst = await ethers.getContractAt("VaultToken", tokenAddressFirst);
+      const optionTokenContractSecond = await ethers.getContractAt("VaultToken", tokenAddressSecond);
+      const firstTokenName = await optionTokenContractFirst.name();
+      const secondTokenName = await optionTokenContractSecond.name();
+
+      expect(firstTokenName).to.equal("ERC20-CALL10-EPOCH-1");
+      expect(secondTokenName).to.equal("ERC20-CALL20-EPOCH-1");
     });
   });
 });
