@@ -3,5 +3,6 @@ artifacts
 cache
 coverage*
 gasReporterOutput.json
-client
+client/node_modules
+client/.next
 typechain-types

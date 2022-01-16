@@ -1,8 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Wallet, BigNumber, Contract, utils } from "ethers";
-import { deployContract, MockProvider, solidity } from "ethereum-waffle";
-import tokenInterface from "../artifacts/contracts/VaultToken.sol/VaultToken.json";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import * as time from "./helpers/time";
 import { Provider } from "@ethersproject/providers";

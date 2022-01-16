@@ -1,45 +1,36 @@
 import { Button, Box, Text, SimpleGrid } from "@chakra-ui/react";
 import Identicon from "./Identicon";
 import { handleInjectedProvider, handleWalletConnect } from "../lib";
-import { useContext, useState } from 'react';
-import { globalContext } from '../store'
-import BeatLoader from 'react-spinners/BeatLoader'
-
+import { useContext, useState } from "react";
+import { globalContext } from "../store";
+import BeatLoader from "react-spinners/BeatLoader";
 
 type Props = {
-  handleOpenModal: any
+  handleOpenModal: any;
 };
 
 export default function ConnectButton({ handleOpenModal }: Props) {
-  const { globalState, dispatch } = useContext(globalContext)
-  const [ etherBalance, setEtherBalance ] = useState(0)
-  const [ loading, setLoading ] = useState(false)
-  const [ walletConnectLoading, setWalletConnectLoading ] = useState(false)
+  const { globalState, dispatch } = useContext(globalContext);
+  const [etherBalance, setEtherBalance] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [walletConnectLoading, setWalletConnectLoading] = useState(false);
 
-  async function handleConnectWallet(wallet: string)  {
-    wallet === 'WalletConnect' ? setWalletConnectLoading(true) : setLoading(true)
+  async function handleConnectWallet(wallet: string) {
+    wallet === "WalletConnect" ? setWalletConnectLoading(true) : setLoading(true);
     try {
-      const { account, web3 } = 
-        await handleInjectedProvider(dispatch)
-      const balance = await web3.eth.getBalance(account)
-      console.log('balance', balance)
-      setEtherBalance(parseInt(balance)/1e18)
+      const { account, web3 } = await handleInjectedProvider(dispatch);
+      const balance = await web3.eth.getBalance(account);
+      console.log("balance", balance);
+      setEtherBalance(parseInt(balance) / 1e18);
     } catch (error) {
-      console.error(error)  
+      console.error(error);
     } finally {
-      wallet === 'WalletConnect' ? setWalletConnectLoading(false) : setLoading(false)
+      wallet === "WalletConnect" ? setWalletConnectLoading(false) : setLoading(false);
     }
   }
   // console.log('globalState', globalState)
   return globalState.account ? (
-    <Box
-      mt={3}
-      display="flex"
-      alignItems="center"
-      background="gray.700"
-      borderRadius="xl"
-      py="0"
-    >
+    <Box mt={3} display="flex" alignItems="center" background="gray.700" borderRadius="xl" py="0">
       <Box px="3">
         <Text color="white" fontSize="md">
           {etherBalance.toFixed(3)} ETH
@@ -64,7 +55,7 @@ export default function ConnectButton({ handleOpenModal }: Props) {
           {globalState.account &&
             `${globalState.account.slice(0, 6)}...${globalState.account.slice(
               globalState.account.length - 4,
-              globalState.account.length
+              globalState.account.length,
             )}`}
         </Text>
         <Identicon />
@@ -75,7 +66,7 @@ export default function ConnectButton({ handleOpenModal }: Props) {
       <Button
         isLoading={loading}
         spinner={<BeatLoader size={8} color="white" />}
-        onClick={() => handleConnectWallet('MetaMask')}
+        onClick={() => handleConnectWallet("MetaMask")}
         bg="blue.800"
         color="blue.300"
         fontSize="lg"

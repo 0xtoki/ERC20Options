@@ -52,7 +52,7 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
     ganache: {
-      url: `HTTP://127.0.0.1:7545`,
+      url: `HTTP://0.0.0.0:8545`,
       accounts: process.env.GANACHE_KEY !== undefined ? [process.env.GANACHE_KEY] : [],
     },
   },

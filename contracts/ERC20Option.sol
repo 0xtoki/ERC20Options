@@ -351,4 +351,12 @@ contract ERC20Option is Ownable, Pausable {
     function concatenate(string memory a, string memory b) internal pure returns (string memory) {
         return string(abi.encodePacked(a, b));
     }
+
+    /**
+     * @notice Get the strikes of the epoch
+     * @param epoch the epoch to get strikes for
+     */
+    function getEpochStrikes(uint256 epoch) public view returns (uint256[] memory) {
+        return epochStrikes[epoch];
+    }
 }
