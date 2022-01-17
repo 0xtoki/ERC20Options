@@ -8,18 +8,29 @@
 yarn install
 ```
 
-Setup ganache network in `hardhat.config.ts` and add private key to the env file
+Setup ganache network in `hardhat.config.ts` and add private key to the env file. After deploying the contract addresses displayed in the terminal need to be added to each of the scripts used below and the .env.local file in the nextjs app located in the client folder
 
 
 ```bash
 npx hardhat run --network ganache scripts/deploy.ts    
 ```
 
-To initiate the first round of options, add the appropriate contract addresses in this file forto the option contract and the erc20 TST token
+To initiate the first round of options
 
 ```bash
 npx hardhat run --network ganache scripts/startOption.ts       
 ```
+To force the option into the exercise window 
+```bash
+npx hardhat run --network ganache scripts/forceOpenExerciseWindow.ts   
+```
+
+To start the next epoch 
+
+```bash
+npx hardhat run --network ganache scripts/rolloverToNextEpoch.ts 
+```
+
 
 ## Setup UI
 
