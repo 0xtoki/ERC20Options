@@ -12,7 +12,6 @@ import { Notify } from "notiflix/build/notiflix-notify-aio";
 export default function ERC20Option() {
   const { globalState, dispatch } = useContext(globalContext);
   const { account, web3 } = globalState;
-  const [greetingOutput, setGreetingOutput] = useState("");
   const [currentEpoch, setCurrentEpoch] = useState(null);
   const [tstBalance, setCurrentTSTBalance] = useState(0);
   const [epochExpiry, setEpochExpiry] = useState(NaN);
@@ -31,7 +30,10 @@ export default function ERC20Option() {
   const [withdrawLoading, withdrawButton] = useButton(withdrawCollateral, "Withdraw Collateral");
   const [tokenAmount, tokenAmountInput] = useInput(mintOptionLoading as boolean, "option amount");
   const [strikePriceMint, strikePriceMintInput] = useInput(mintOptionLoading as boolean, "strike price");
-
+  const [loadingTokenApprove, approveERC20Button] = useButton(approveTokenSpend, "approve spend");
+  const [loadingOptionApprove, approveOptionsButton] = useButton(approveOptionTokenSpend, "approve spend");
+  const [exerciseAmount, exerciseAmountInput] = useInput(mintOptionLoading as boolean, "option amount");
+  const [strikePriceExercise, strikePriceExerciseInput] = useInput(mintOptionLoading as boolean, "strike price");
   const [withdrawEpoch, withdrawEpochInput] = useInput(withdrawLoading as boolean, "withdraw epoch");
   const [withdrawStrike, withdrawStrikeInput] = useInput(withdrawLoading as boolean, "withdraw strike price");
 
@@ -54,7 +56,6 @@ export default function ERC20Option() {
           .getEpochStrikes(currentEpoch)
           .call()
           .then((result: any) => {
-            console.log(result);
             setEpochStrikes(result);
           });
       }
@@ -74,26 +75,26 @@ export default function ERC20Option() {
       Notify.failure("Strike price invalid for that epoch");
       return;
     }
-    await approveTokenSpend().then(() => {
-      if (optionContract) {
-        let address = web3.currentProvider.selectedAddress;
-        optionContract.methods
-          .mintOption(strikeIndex, tokenAmount, address)
-          .send({ from: address })
-          .then((result: any) => {
-            setGreetingOutput(result);
-            console.log(result);
-          });
-      }
-    });
-    await getOptionState();
+    if (optionContract) {
+      let tokenAmountWei = web3.utils.toWei(tokenAmount, "ether");
+      console.log(tokenAmountWei);
+      let address = web3.currentProvider.selectedAddress;
+      optionContract.methods
+        .mintOption(strikeIndex, tokenAmountWei, address)
+        .send({ from: address })
+        .then((result: any) => {
+          console.log(result);
+        })
+        .then(getOptionState);
+    }
   }
 
   async function approveTokenSpend() {
     if (tokenContract && tokenAmount) {
+      let tokenAmountWei = web3.utils.toWei(tokenAmount, "ether");
       let address = web3.currentProvider.selectedAddress;
       tokenContract.methods
-        .approve(contractAddress, tokenAmount)
+        .approve(contractAddress, tokenAmountWei)
         .send({ from: address })
         .then((result: any) => {
           console.log(result);
@@ -129,9 +130,48 @@ export default function ERC20Option() {
     }
   }
 
-  async function withdrawCollateral() {}
+  async function withdrawCollateral() {
+    if (web3 && withdrawEpochInput && withdrawStrikeInput) {
+      let strikeIndex = await indexFromPriceEpoch(withdrawStrike, withdrawEpoch);
+      if (strikeIndex == -1) {
+        Notify.failure("Strike price invalid for that epoch");
+        return;
+      }
+      let address = web3.currentProvider.selectedAddress;
+      optionContract.methods
+        .withdrawCollateral(withdrawEpoch, strikeIndex)
+        .send({ from: address })
+        .then((result: any) => {
+          console.log(result);
+        })
+        .then(getOptionState)
+        .catch(() => {
+          Notify.failure("Failed to exercise option, check option is in expiry window");
+        });
+    }
+  }
 
-  async function exerciseOption() {}
+  async function exerciseOption() {
+    if (web3) {
+      let strikeIndex = await indexFromPriceEpoch(strikePriceExercise, currentEpoch);
+      if (strikeIndex == -1) {
+        Notify.failure("Strike price invalid for that epoch");
+        return;
+      }
+      let tokenAmountWei = web3.utils.toWei(exerciseAmount, "ether");
+      let address = web3.currentProvider.selectedAddress;
+      optionContract.methods
+        .settle(strikeIndex, tokenAmountWei, currentEpoch)
+        .send({ from: address })
+        .then((result: any) => {
+          console.log(result);
+        })
+        .then(getOptionState)
+        .catch(() => {
+          Notify.failure("Failed to exercise option, check option is in expiry window");
+        });
+    }
+  }
 
   function toDate() {
     if (epochExpiry) {
@@ -141,19 +181,38 @@ export default function ERC20Option() {
     return "";
   }
 
-  async function indexFromPriceEpoch(price: { toString: () => any }, epoch: number) {
-    if (currentEpoch) {
-      if (0 < epoch && epoch <= currentEpoch) {
-        let strikes = await optionContract.methods
-          .getEpochStrikes(currentEpoch)
-          .call()
-          .then((result: any) => {
-            return result;
-          });
-        return strikes.indexOf(price.toString());
-      }
-      return -1;
+  async function approveOptionTokenSpend() {
+    let strikeIndex = await indexFromPriceEpoch(strikePriceExercise, currentEpoch);
+    if (strikeIndex == -1) {
+      Notify.failure("Strike price invalid for that epoch");
+      return;
     }
+    let optionTokenAddress = epochOptionTokens[strikeIndex];
+    let tokenAmountWei = web3.utils.toWei(exerciseAmount, "ether");
+
+    let optionTokenContract = new web3.eth.Contract(tokenAbi, optionTokenAddress);
+    let userAddress = web3.currentProvider.selectedAddress;
+    optionTokenContract.methods
+      .approve(contractAddress, tokenAmountWei)
+      .send({ from: userAddress })
+      .then((result: any) => {
+        console.log(result);
+      });
+  }
+
+  async function indexFromPriceEpoch(price, epoch) {
+    console.log(epoch);
+    if (epoch > 0 && epoch <= currentEpoch) {
+      let strikes = await optionContract.methods
+        .getEpochStrikes(epoch)
+        .call()
+        .then((result: any) => {
+          console.log(result);
+          return result;
+        });
+      return strikes.indexOf(price.toString());
+    }
+    return -1;
   }
 
   useEffect(() => {
@@ -213,18 +272,22 @@ export default function ERC20Option() {
           </Grid>
           <br />
           <Grid mt="5" templateColumns="repeat(3, 1fr)" templateRows="repeat(4, 1fr)" gap={3}>
-            <GridItem align="left">{mintButton} </GridItem>
-            <GridItem align="end">{exerciseButton}</GridItem>
-            <GridItem align="end">{withdrawButton}</GridItem>
-            <GridItem align="end">{tokenAmountInput}</GridItem>
-            <GridItem colSpan={1}></GridItem>
-            <GridItem align="end">{withdrawEpochInput}</GridItem>
-            <GridItem align="end">{strikePriceMintInput}</GridItem>
-            <GridItem colSpan={1}></GridItem>
-            <GridItem align="end">{withdrawStrikeInput}</GridItem>
+            <GridItem align="center">
+              {approveERC20Button} {mintButton}
+            </GridItem>
+            <GridItem align="center">
+              {approveOptionsButton} {exerciseButton}
+            </GridItem>
+            <GridItem align="center">{withdrawButton}</GridItem>
+            <GridItem align="center">{tokenAmountInput}</GridItem>
+            <GridItem align="center">{exerciseAmountInput}</GridItem>
+            <GridItem align="center">{withdrawEpochInput}</GridItem>
+            <GridItem align="center">{strikePriceMintInput}</GridItem>
+            <GridItem align="center">{strikePriceExerciseInput}</GridItem>
+            <GridItem align="center">{withdrawStrikeInput}</GridItem>
           </Grid>
           <Grid mt="5" templateColumns="repeat(1, 1fr)" templateRows="repeat(4, 1fr)" gap={3}>
-            <GridItem align="end " colSpan={1}>
+            <GridItem align="center " colSpan={1}>
               <Text textAlign="center" fontWeight="bold">
                 Options token contracts
               </Text>

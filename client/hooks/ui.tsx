@@ -20,7 +20,6 @@ export function useButton(onClickHandler, label: string) {
   const [loading, setLoading] = useState(false);
   const button = (
     <Button
-      isFullWidth
       isLoading={loading}
       spinner={<BeatLoader size={8} color="grey" />}
       onClick={async () => {

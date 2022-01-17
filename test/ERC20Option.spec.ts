@@ -83,7 +83,9 @@ describe("unit:ERC20Option", function () {
     });
     it("should revert if strike index is invalid", async function () {
       const depositor = Signers[1];
-      await expect(ERC20Option.connect(depositor).mintOption(10, ONE, depositor.address)).to.revertedWith("E");
+      await expect(ERC20Option.connect(depositor).mintOption(10, ONE, depositor.address)).to.revertedWith(
+        "Invalid strike Index",
+      );
     });
   });
 
@@ -109,12 +111,12 @@ describe("unit:ERC20Option", function () {
       const tokenAddress = await ERC20Option.epochStrikeTokens(1, 20);
       const optionTokenContract = await ethers.getContractAt("VaultToken", tokenAddress);
       await optionTokenContract.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      await expect(ERC20Option.connect(Signers[1]).settle(1, ONE, 1)).to.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).settle(1, ONE, 1)).to.revertedWith("Settlement not open");
     });
     it("should not allow users to exercise options before the exercise window", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(10000));
       await expect(ERC20Option.openSettlement(21)).to.revertedWith("E");
-      await expect(ERC20Option.connect(Signers[1]).settle(1, ONE, 1)).to.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).settle(1, ONE, 1)).to.revertedWith("Settlement not open");
     });
     it("should send the profit to the user", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -150,7 +152,7 @@ describe("unit:ERC20Option", function () {
       const tokenAddress = await ERC20Option.epochStrikeTokens(1, 20);
       const optionTokenContract = await ethers.getContractAt("VaultToken", tokenAddress);
       await optionTokenContract.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      await expect(ERC20Option.connect(Signers[1]).settle(10, ONE, 1)).to.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).settle(10, ONE, 1)).to.revertedWith("Invalid strike");
     });
     it("should revert if amount greater than balance", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -158,7 +160,7 @@ describe("unit:ERC20Option", function () {
       const tokenAddress = await ERC20Option.epochStrikeTokens(1, 20);
       const optionTokenContract = await ethers.getContractAt("VaultToken", tokenAddress);
       await optionTokenContract.connect(Signers[1]).approve(ERC20Option.address, ONE);
-      await expect(ERC20Option.connect(Signers[1]).settle(10, TWO, 1)).to.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).settle(1, TWO, 1)).to.revertedWith("Invalid option balance");
     });
   });
 
@@ -168,9 +170,7 @@ describe("unit:ERC20Option", function () {
     });
     it("should not allow depositors to claim before the epoch has ended", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
-      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 1)).to.revertedWith("E");
-      await ERC20Option.openSettlement(40);
-      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 1)).to.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 1)).to.revertedWith("Epoch not expired");
     });
     it("should return an accurate amount given the options expired in the money", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -202,20 +202,22 @@ describe("unit:ERC20Option", function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
       await ERC20Option.openSettlement(40);
       await time.increaseTo((await ERC20Option.epochExpiry()).add(timeInterval));
-      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 1)).to.be.revertedWith("E");
+      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 1)).to.be.revertedWith("Epoch not expired");
     });
 
-    it("should revert if stroke index invalid", async function () {
+    it("should revert if strike index invalid", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
       await ERC20Option.openSettlement(40);
       await time.increaseTo((await ERC20Option.epochExpiry()).add(timeInterval));
-      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 5)).to.be.revertedWith("E");
+      await ERC20Option.expireEpoch();
+      await expect(ERC20Option.connect(Signers[1]).withdrawCollateral(1, 5)).to.be.revertedWith("Invalid strike index");
     });
     it("should revert if user deposit 0", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
       await ERC20Option.openSettlement(40);
       await time.increaseTo((await ERC20Option.epochExpiry()).add(timeInterval));
-      await expect(ERC20Option.connect(Signers[0]).withdrawCollateral(1, 1)).to.be.revertedWith("E");
+      await ERC20Option.expireEpoch();
+      await expect(ERC20Option.connect(Signers[0]).withdrawCollateral(1, 1)).to.be.revertedWith("No deposits recorded");
     });
   });
 
@@ -226,11 +228,11 @@ describe("unit:ERC20Option", function () {
     it("should revert if settlement already open", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
       await ERC20Option.openSettlement(40);
-      await expect(ERC20Option.openSettlement(40)).to.be.revertedWith("E");
+      await expect(ERC20Option.openSettlement(40)).to.be.revertedWith("Settlement already open");
     });
     it("should revert if settlement window has not been reached", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(100000));
-      await expect(ERC20Option.openSettlement(40)).to.be.revertedWith("E");
+      await expect(ERC20Option.openSettlement(40)).to.be.revertedWith("Settlement window not reached");
     });
     it("should set settlement price and mark epoch as settlemnt open", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -250,11 +252,11 @@ describe("unit:ERC20Option", function () {
       await ERC20Option.openSettlement(40);
       await time.increaseTo((await ERC20Option.epochExpiry()).add(timeInterval));
       await ERC20Option.expireEpoch();
-      await expect(ERC20Option.expireEpoch()).to.be.revertedWith("E");
+      await expect(ERC20Option.expireEpoch()).to.be.revertedWith("Epoch already expired");
     });
     it("should revert if not past expiry", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(100000));
-      await expect(ERC20Option.expireEpoch()).to.be.revertedWith("E");
+      await expect(ERC20Option.expireEpoch()).to.be.revertedWith("Not past expiry");
     });
     it("should set epoch expired and mark epoch as settlemnt closed", async function () {
       await time.increaseTo((await ERC20Option.epochExpiry()).sub(timeInterval));
@@ -283,7 +285,7 @@ describe("unit:ERC20Option", function () {
       await ERC20Option.deployed();
     });
     it("should revert if next epoch strikes not set", async function () {
-      await expect(ERC20Option.startNextEpoch()).to.be.revertedWith("E");
+      await expect(ERC20Option.startNextEpoch()).to.be.revertedWith("Strikes not set");
     });
     it("should create option erc20 tokens", async function () {
       await ERC20Option.setStrikes([10, 20]);

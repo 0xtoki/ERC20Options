@@ -24,10 +24,8 @@ export async function handleInjectedProvider(dispatch: Dispatch<ActionType>) {
     provider = new Web3.providers.HttpProvider("http://localhost:7545");
   }
   const web3 = new Web3(provider);
-  // REF: https://docs.metamask.io/guide/getting-started.html#connecting-to-metamask
   const accounts = await provider.request({ method: "eth_requestAccounts" });
 
-  // The following code seems not working if trigger disconnect from MetaMask Chrome extension
   provider.on("disconnect", (error: any) => {
     dispatch({ type: "CLEAR_STATE" });
     console.log(error);
@@ -37,12 +35,10 @@ export async function handleInjectedProvider(dispatch: Dispatch<ActionType>) {
 }
 
 export async function handleWalletConnect(dispatch: Dispatch<ActionType>) {
-  //  Create WalletConnect Provider
   const provider = new WalletConnectProvider({
     infuraId: infuraProjectId,
   });
 
-  // Enable session (triggers QR Code modal)
   await provider.enable();
 
   const web3 = new Web3(provider as WalletConnectWeb3Provider);

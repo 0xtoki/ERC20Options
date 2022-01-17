@@ -104,7 +104,7 @@ contract ERC20Option is Ownable, Pausable {
     /*==== CONSTRUCTOR ====*/
 
     constructor(address _collateralAsset) {
-        require(_collateralAsset != address(0), "E1");
+        require(_collateralAsset != address(0), "E");
 
         collateralAsset = _collateralAsset;
 
@@ -134,8 +134,8 @@ contract ERC20Option is Ownable, Pausable {
      */
     function startNextEpoch() external onlyOwner whenNotPaused returns (bool) {
         uint256 nextEpoch = currentEpoch + 1;
-        require(!isVaultReady[nextEpoch], "E");
-        require(epochStrikes[nextEpoch].length > 0, "E");
+        require(!isVaultReady[nextEpoch], "Vault not ready");
+        require(epochStrikes[nextEpoch].length > 0, "Strikes not set");
 
         if (currentEpoch > 0) {
             // Previous epoch must be expired
@@ -176,7 +176,7 @@ contract ERC20Option is Ownable, Pausable {
         if (currentEpoch > 0) {
             //(, uint256 epochExpiry) = getEpochTimes(currentEpoch);
             // epochExpiry is a month out from previous epoch
-            require((block.timestamp > epochExpiry), "E");
+            require((block.timestamp > epochExpiry), "Epoch not expired");
         }
 
         // Set the next epoch strikes
@@ -201,18 +201,18 @@ contract ERC20Option is Ownable, Pausable {
         address user
     ) public whenNotPaused returns (bool) {
         if (currentEpoch > 0) {
-            require(isEpochActive[currentEpoch], "E");
+            require(isEpochActive[currentEpoch], "Epoch not active");
         }
 
         // Must be a valid strikeIndex
-        require(strikeIndex < epochStrikes[currentEpoch].length, "E");
+        require(strikeIndex < epochStrikes[currentEpoch].length, "Invalid strike Index");
 
         // Must +ve amount
-        require(amount > 0, "E");
+        require(amount > 0, "Invalid amount");
 
         // Must be a valid strike
         uint256 strike = epochStrikes[currentEpoch][strikeIndex];
-        require(strike != 0, "E");
+        require(strike != 0, "Invalid strike");
 
         bytes32 userStrike = keccak256(abi.encodePacked(user, strike));
 
@@ -250,19 +250,19 @@ contract ERC20Option is Ownable, Pausable {
         uint256 amount,
         uint256 epoch
     ) external whenNotPaused returns (uint256 pnl) {
-        require(isSettlementOpen[epoch], "E1");
-        require(!isEpochExpired[epoch], "E2");
-        require(strikeIndex < epochStrikes[epoch].length, "E3");
-        require(amount > 0, "E4");
+        require(isSettlementOpen[epoch], "Settlement not open");
+        require(!isEpochExpired[epoch], "Epoch not expired");
+        require(strikeIndex < epochStrikes[epoch].length, "Invalid strike index");
+        require(amount > 0, "Invalid amount");
 
         uint256 strike = epochStrikes[epoch][strikeIndex];
-        require(strike != 0, "E");
-        require(IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >= amount, "E5");
+        require(strike != 0, "Invalid strike");
+        require(IERC20(epochStrikeTokens[epoch][strike]).balanceOf(msg.sender) >= amount, "Invalid option balance");
 
         // Calculate PnL (in DPX)
         pnl = calculatePnl(settlementPrices[epoch], strike, amount);
 
-        require(pnl > 0, "E");
+        require(pnl > 0, "Negative pnl");
 
         IERC20 _erc20 = IERC20(collateralAsset);
 
@@ -290,8 +290,8 @@ contract ERC20Option is Ownable, Pausable {
     /// @notice Sets the current epoch as expired.
     /// @return Whether expire was successful
     function expireEpoch() public whenNotPaused returns (bool) {
-        require(!isEpochExpired[currentEpoch], "E");
-        require((block.timestamp > epochExpiry), "E");
+        require(!isEpochExpired[currentEpoch], "Epoch already expired");
+        require((block.timestamp > epochExpiry), "Not past expiry");
 
         isEpochExpired[currentEpoch] = true;
         isSettlementOpen[currentEpoch] = false;
@@ -302,9 +302,9 @@ contract ERC20Option is Ownable, Pausable {
     /// @notice Sets the current epoch as expired.
     /// @return Whether opening settlement was successful
     function openSettlement(uint256 settlementPrice) external onlyOwner whenNotPaused returns (bool) {
-        require(!isSettlementOpen[currentEpoch], "E");
-        require((block.timestamp > (epochExpiry - HOUR)), "E");
-        require((block.timestamp < epochExpiry), "E");
+        require(!isSettlementOpen[currentEpoch], "Settlement already open");
+        require((block.timestamp > (epochExpiry - HOUR)), "Settlement window not reached");
+        require((block.timestamp < epochExpiry), "Already expired");
 
         settlementPrices[currentEpoch] = settlementPrice;
 
@@ -320,15 +320,15 @@ contract ERC20Option is Ownable, Pausable {
      * @return withdrawn amount
      */
     function withdrawCollateral(uint256 withdrawEpoch, uint256 strikeIndex) external whenNotPaused returns (uint256) {
-        require(isEpochExpired[withdrawEpoch], "E");
-        require(strikeIndex < epochStrikes[withdrawEpoch].length, "E");
+        require(isEpochExpired[withdrawEpoch], "Epoch not expired");
+        require(strikeIndex < epochStrikes[withdrawEpoch].length, "Invalid strike index");
 
         uint256 strike = epochStrikes[withdrawEpoch][strikeIndex];
-        require(strike != 0, "E");
+        require(strike != 0, "Invalid strike");
 
         bytes32 userStrike = keccak256(abi.encodePacked(msg.sender, strike));
         uint256 userStrikeDeposits = userEpochDeposits[withdrawEpoch][userStrike];
-        require(userStrikeDeposits > 0, "E");
+        require(userStrikeDeposits > 0, "No deposits recorded");
 
         // Transfer tokens to user
         uint256 pnl = calculatePnl(settlementPrices[withdrawEpoch], strike, userStrikeDeposits);
